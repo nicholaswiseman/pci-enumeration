@@ -4,6 +4,103 @@
 #include <stdio.h>
 #include <devpkey.h>
 
+typedef struct 
+{
+    UINT8 bus;
+    UINT8 device;
+    UINT8 function;
+} BDF;
+
+BDF seenBdfs[255];
+UINT8 bdfCount = 0;
+
+UINT32 GetVendorId(WCHAR* hwid)
+{
+    UINT32 vendorId;
+    WCHAR *pVen = wcsstr(hwid, L"VEN_");
+    if (pVen) swscanf(pVen, L"VEN_%4x", &vendorId);
+    return vendorId;
+}
+
+UINT32 GetDeviceId(WCHAR* hwid)
+{
+    UINT32 devId;
+    WCHAR *pDev = wcsstr(hwid, L"DEV_");
+    if (pDev) swscanf(pDev, L"DEV_%4x", &devId);
+    return devId;
+}
+
+BOOL BdfWasSeen(BDF bdf)
+{
+    BOOL wasSeen = FALSE;
+    for(int i = 0; i < bdfCount; i++ )
+    {
+        wasSeen = 
+        (bdf.bus == seenBdfs[i].bus)
+        && (bdf.device == seenBdfs[i].device)
+        &&  (bdf.function == seenBdfs[i].function);
+        if(wasSeen)
+        {
+            break;
+        }
+    }
+    seenBdfs[bdfCount] = bdf;
+    bdfCount++;
+    return wasSeen;
+}
+
+BDF GetBdf(HDEVINFO dev_info_set, PSP_DEVINFO_DATA pDevice_info)
+{
+    BDF bdf = {0};
+    const DEVPROPKEY address_property_key = DEVPKEY_Device_Address;
+    const DEVPROPKEY bus_property_key = DEVPKEY_Device_BusNumber;
+    DEVPROPTYPE property_type;
+    UINT32 address;
+    BOOL status;
+    UINT32 bus;
+
+    /*
+    WINSETUPAPI BOOL SetupDiGetDevicePropertyW(
+      [in]            HDEVINFO         DeviceInfoSet,
+      [in]            PSP_DEVINFO_DATA DeviceInfoData,
+      [in]            const DEVPROPKEY *PropertyKey,
+      [out]           DEVPROPTYPE      *PropertyType,
+      [out, optional] PBYTE            PropertyBuffer,
+      [in]            DWORD            PropertyBufferSize,
+      [out, optional] PDWORD           RequiredSize,
+      [in]            DWORD            Flags
+    );
+    */
+    status = SetupDiGetDevicePropertyW(
+        dev_info_set,
+        pDevice_info,
+        &address_property_key,
+        &property_type,
+        (PBYTE)&address,
+        sizeof(address),
+        NULL,
+        0
+    );
+
+    bdf.function = address & 0x7;
+    bdf.device = (address & 0xF8) >> 3; 
+
+    status = SetupDiGetDevicePropertyW(
+        dev_info_set,
+        pDevice_info,
+        &bus_property_key,
+        &property_type,
+        (PBYTE)&bus,
+        sizeof(bus),
+        NULL,
+        0
+    );
+
+    bdf.bus = bus;
+
+    return bdf;
+}
+
 int main(void)
 {
     /*
@@ -34,7 +131,6 @@ int main(void)
     DWORD memberIdx = 0;
     while(SetupDiEnumDeviceInfo(dev_info_set, memberIdx, &device_info))
     {
-        printf("*************************************\n");
         /*
         WINSETUPAPI BOOL SetupDiGetDeviceRegistryPropertyW(
           [in]            HDEVINFO         DeviceInfoSet,
@@ -61,9 +157,8 @@ int main(void)
             NULL
         );
 
-        printf("HWID:");
-        wprintf(hwid);
-        printf("\n");
+        UINT32 vendorId = GetVendorId(hwid);
+        UINT32 deviceId = GetDeviceId(hwid);
 
         //get the description
         WCHAR desc[255];
@@ -77,62 +172,24 @@ int main(void)
             NULL
         );
 
-        printf("Desc:");
-        wprintf(desc);
-        printf("\n");
+        BDF bdf = GetBdf(dev_info_set, &device_info);
 
-        /*
-        WINSETUPAPI BOOL SetupDiGetDevicePropertyW(
-          [in]            HDEVINFO         DeviceInfoSet,
-          [in]            PSP_DEVINFO_DATA DeviceInfoData,
-          [in]            const DEVPROPKEY *PropertyKey,
-          [out]           DEVPROPTYPE      *PropertyType,
-          [out, optional] PBYTE            PropertyBuffer,
-          [in]            DWORD            PropertyBufferSize,
-          [out, optional] PDWORD           RequiredSize,
-          [in]            DWORD            Flags
-        );
-        */
-        const DEVPROPKEY address_property_key = DEVPKEY_Device_Address;
-        DEVPROPTYPE property_type;
-        UINT32 value;
-
-        status = SetupDiGetDevicePropertyW(
-            dev_info_set,
-            &device_info,
-            &address_property_key,
-            &property_type,
-            (PBYTE)&value,
-            sizeof(value),
-            NULL,
-            0
-        );
-
-        const DEVPROPKEY bus_property_key = DEVPKEY_Device_BusNumber;
-        UINT32 bus;
-
-        status = SetupDiGetDevicePropertyW(
-            dev_info_set,
-            &device_info,
-            &bus_property_key,
-            &property_type,
-            (PBYTE)&bus,
-            sizeof(bus),
-            NULL,
-            0
-        );
-
-        UINT8 function = value & 0x7;
-        UINT8 device = (value & 0xF8) >> 3;
-        printf("Address:");
-        printf("Bus: %d, Device: %d, Function: %d", bus, device, function);
-        printf("\n");
+        if(!BdfWasSeen(bdf))
+        {
+            GetVendorId(hwid);
+            GetDeviceId(hwid);
+            printf("  ");
+            printf("%x:%x:%x  ", bdf.bus, bdf.device, bdf.function);
+            printf("%x:%x  ", vendorId, deviceId);
+            wprintf(desc);
+            printf("\n");
+            //printf("*************************************\n");
+        }
 
         // get ready for the next device
         memberIdx++;
         memset(&device_info, 0, sizeof(SP_DEVINFO_DATA));
         device_info.cbSize = sizeof(SP_DEVINFO_DATA);
-        printf("*************************************\n");
     };
 
     DWORD error = GetLastError();
