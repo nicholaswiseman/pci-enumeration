@@ -11,12 +11,12 @@ typedef struct
     UINT8 function;
 } BDF;
 
-BDF seenBdfs[255];
+BDF seenBdfs[2048];
 UINT8 bdfCount = 0;
 
 UINT32 GetVendorId(WCHAR* hwid)
 {
-    UINT32 vendorId;
+    UINT32 vendorId = 0;
     WCHAR *pVen = wcsstr(hwid, L"VEN_");
     if (pVen) swscanf(pVen, L"VEN_%4x", &vendorId);
     return vendorId;
@@ -24,7 +24,7 @@ UINT32 GetVendorId(WCHAR* hwid)
 
 UINT32 GetDeviceId(WCHAR* hwid)
 {
-    UINT32 devId;
+    UINT32 devId = 0;
     WCHAR *pDev = wcsstr(hwid, L"DEV_");
     if (pDev) swscanf(pDev, L"DEV_%4x", &devId);
     return devId;
@@ -33,6 +33,13 @@ UINT32 GetDeviceId(WCHAR* hwid)
 BOOL BdfWasSeen(BDF bdf)
 {
     BOOL wasSeen = FALSE;
+
+    if(bdfCount >= 2048)
+    {
+        printf("!!ERROR - seenBdfs[] is full");
+        return TRUE;
+    }
+
     for(int i = 0; i < bdfCount; i++ )
     {
         wasSeen = 
@@ -44,8 +51,12 @@ BOOL BdfWasSeen(BDF bdf)
             break;
         }
     }
-    seenBdfs[bdfCount] = bdf;
-    bdfCount++;
+    if(FALSE == wasSeen)
+    {
+        seenBdfs[bdfCount] = bdf;
+        bdfCount++;
+    }
+
     return wasSeen;
 }
 
@@ -178,7 +189,6 @@ int main(void)
         {
             GetVendorId(hwid);
             GetDeviceId(hwid);
-            printf("  ");
             printf("%x:%x:%x  ", bdf.bus, bdf.device, bdf.function);
             printf("%x:%x  ", vendorId, deviceId);
             wprintf(desc);
@@ -201,4 +211,7 @@ int main(void)
     {
         printf("!!FAIL - SetupDiEnumDeviceInfo failed %d\n", error);
     }
+
+    SetupDiDestroyDeviceInfoList(dev_info_set);
+    return 0;
 }
