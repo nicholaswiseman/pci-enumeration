@@ -1,0 +1,15 @@
+qemu-system-x86_64.exe ^
+  -accel tcg ^
+  -machine q35 ^
+  -m 4096 ^
+  -smp 2 ^
+  -cpu qemu64 ^
+  -usb ^
+  -device usb-tablet ^
+  -device ich9-ahci,id=ahci ^
+  -drive file=YourNameHere.qcow2,if=none,id=disk0,format=qcow2 ^
+  -device ide-hd,drive=disk0,bus=ahci.0 ^
+  -cdrom isos/Win10.iso ^
+  -drive if=none,id=unatt,file=fat:rw:<qemuDir>\unattend,format=raw ^
+  -device usb-storage,drive=unatt ^
+  -boot order=d,menu=on
